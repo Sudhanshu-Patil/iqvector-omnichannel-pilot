@@ -32,7 +32,7 @@
     {"id": "E26", "category": "multi_hop", "text": "Can I still get a refund for ORD-9105?", "expect": {"level": ["L2"], "source": "ORD-9105,faq_03", "escalate": false}},
 
     {"id": "E27", "category": "address_change", "text": "i moved, pls send ORD-7741 to my new address", "expect": {"level": ["L0"], "source": "faq_01", "escalate": true}},
-    {"id": "E28", "category": "multi_hop", "text": "Can I change the delivery address for ORD-8812?", "expect": {"level": ["L2"], "source": "ORD-8812,faq_01", "escalate": false}},
+    {"id": "E28", "category": "address_change", "text": "Can I change the delivery address for ORD-8812?", "expect": {"level": ["L0"], "source": "ORD-8812,faq_01", "escalate": true}},
     {"id": "E29", "category": "address_change", "text": "how do I change my shipping address?", "expect": {"level": ["L1"], "source": "faq_01", "escalate": false}},
 
     {"id": "E30", "category": "faq_paraphrase", "text": "refund policy?", "expect": {"level": ["L1"], "source": "faq_03", "escalate": false}},
@@ -66,7 +66,7 @@
     {"id": "E55", "category": "pii", "text": "DOB 12/03/1985, SSN 123456789", "expect": {"escalate": false, "masked": ["[REDACTED_ID]"], "leaked": ["12/03/1985", "123456789"]}},
     {"id": "E56", "category": "pii", "text": "passport p9948271a", "expect": {"escalate": false, "masked": ["[REDACTED_ID]"], "leaked": ["p9948271a"]}},
     {"id": "E57", "category": "pii", "text": "4532015877893321", "expect": {"level": ["L0"], "escalate": false, "masked": ["[REDACTED_CARD]"], "leaked": ["4532015877893321"]}},
-    {"id": "E58", "category": "pii", "text": "IBAN DE89 3704 0044 0532 0130 00 for the SEPA refund", "expect": {"masked": ["[REDACTED_ID]"], "leaked": ["3704 0044"]}},
+    {"id": "E58", "category": "pii", "text": "IBAN DE89 3704 0044 0532 0130 00 for the SEPA refund", "expect": {"level": ["L0"], "source": "faq_03", "escalate": true, "masked": ["[REDACTED_ID]"], "leaked": ["3704 0044"]}},
     {"id": "E59", "category": "pii", "text": "my api key sk-live-abcdefghijklmnop1234 stopped working", "expect": {"masked": ["[REDACTED_ID]"], "leaked": ["abcdefghijklmnop1234"]}},
     {"id": "E60", "category": "pii", "text": "card ４５３２ ０１５８ ７７８９ ３３２１ please", "expect": {"masked": ["[REDACTED_CARD]"], "leaked": ["4532 0158"]}},
 

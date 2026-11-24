@@ -47,6 +47,47 @@ def test_unusable_answers_fall_back_to_the_source(monkeypatch, content):
     assert llm.phrase("L1", "What is the refund window?", CONTEXT) is None
 
 
+PAYMENTS = {
+    "faq_06": "We accept SEPA Instant transfers in EUR, international SWIFT wire transfers in USD/GBP/EUR, and "
+    "corporate Visa/Mastercard cards. We do not accept cryptocurrency or cash payments."
+}
+STORAGE = {
+    "faq_05": "All customer and candidate data is stored in our EU Sovereign Vault (Frankfurt / Dublin) encrypted with "
+    "AES-256 at rest and TLS 1.3 in transit. Raw PII is redacted prior to any external LLM call."
+}
+
+
+@pytest.mark.parametrize(
+    ("context", "question", "answer"),
+    [
+        # Each of these came back from gpt-oss with grounded=true during live testing.
+        (PAYMENTS, "do u take paypal", "We do not accept PayPal."),
+        (STORAGE, "GDPR?", "Data is stored in Frankfurt and Dublin, which aligns with GDPR requirements."),
+        (PAYMENTS, "IBAN [REDACTED_ID] for the SEPA refund", "We can process a SEPA refund in EUR to the IBAN you provided."),
+        ({"faq_04": "Standard Enterprise Node Licenses include a rate limit of 600 requests per minute."},
+         "What's the rate limit for the Starter plan?", "The Starter plan includes 600 requests per minute."),
+        (STORAGE, "Are you certified?", "Yes, our storage is fully certified and compliant."),
+    ],
+)
+def test_live_hallucination_patterns_are_rejected(monkeypatch, context, question, answer):
+    monkeypatch.setattr(llm, "_chat", groq_reply(f'{{"answer": "{answer}", "grounded": true}}'))
+    assert llm.phrase("L1", question, context) is None
+
+
+@pytest.mark.parametrize(
+    ("context", "question", "answer"),
+    [
+        (PAYMENTS, "Can I pay with Bitcoin?", "No, we do not accept cryptocurrency payments."),
+        (PAYMENTS, "Which payment options can I use?",
+         "You can pay by SEPA Instant transfer in EUR, SWIFT wire in USD, GBP or EUR, or corporate Visa or Mastercard cards."),
+        (STORAGE, "Where is my data stored?", "Your data is stored in our EU Sovereign Vault in Frankfurt and Dublin, encrypted with AES-256."),
+    ],
+)
+def test_faithful_paraphrases_pass_the_checks(monkeypatch, context, question, answer):
+    monkeypatch.setattr(llm, "_chat", groq_reply(f'{{"answer": "{answer}", "grounded": true}}'))
+    assert llm.phrase("L1", question, context).answer == answer
+
+
 def test_provider_errors_fall_back_to_the_source(monkeypatch):
     def unavailable(payload):
         raise httpx.ConnectError("groq unreachable")

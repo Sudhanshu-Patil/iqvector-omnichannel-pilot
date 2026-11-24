@@ -54,6 +54,7 @@ ACTION_REQUEST = re.compile(
     r"|\b(?:i\s+want|i\s+need|i\s+would\s+like|i'd\s+like|i\s+demand|please|pls|plz|can\s+you|could\s+you)\b"
     r"[^.!?\n]{0,25}\b(?:refund|reimburse|cancel|money\s+back)\b"
     r"|\brefund\s+(?:me|my|it|this|that|the\s+order)\b|\bprocess\s+(?:a|my|the)\s+refund\b"
+    r"|\bfor\s+(?:the|my|a|this)\s+(?:\w+\s+)?refund\b"
     r"|\b(?:where|when)\b[^.!?\n]{0,25}\bmy\s+(?:refund|money)\b|\brefund\s+status\b",
     re.IGNORECASE,
 )
@@ -120,6 +121,10 @@ UNKNOWN_ORDER_REPLY = (
 ADDRESS_LOCKED_REPLY = (
     "Order {order_id} is already {status} with {carrier}, so its address can't be changed "
     "automatically. I've escalated this to a human operator who can request a reroute with the carrier."
+)
+ADDRESS_CHANGEABLE_REPLY = (
+    "Order {order_id} is still {status}, so its delivery address can still be changed. I can't edit "
+    "orders in chat, so I've passed your request to a specialist who will update it and confirm here."
 )
 REFUSAL_REPLY = (
     "I don't have verified information to answer that, so I won't guess. I've passed your "
@@ -214,13 +219,17 @@ def _orders(kb: KnowledgeBase, content: str, ids: list[str], anchors: list[str],
     found = {order_id: order for order_id in ids if (order := tools.find_order(order_id))}
     missing = [order_id for order_id in ids if order_id not in found]
 
-    wants_address_change = bool(ADDRESS_CHANGE.search(content))
-    locked = next((o for o in found.values() if wants_address_change and not o["can_change_address"]), None)
-    if locked:
-        reply = ADDRESS_LOCKED_REPLY.format(
-            order_id=locked["order_id"], status=_STATUS_WORDING.get(locked["status"], locked["status"]), carrier=locked["carrier"]
-        )
-        return Decision("L0", reply, ADDRESS_FAQ, escalate_reason="address_change_after_dispatch")
+    # Address changes always need a human: either a carrier reroute or an edit the assistant can't make.
+    if ADDRESS_CHANGE.search(content) and found:
+        locked = next((o for o in found.values() if not o["can_change_address"]), None)
+        if locked:
+            reply = ADDRESS_LOCKED_REPLY.format(
+                order_id=locked["order_id"], status=_STATUS_WORDING.get(locked["status"], locked["status"]), carrier=locked["carrier"]
+            )
+            return Decision("L0", reply, ADDRESS_FAQ, escalate_reason="address_change_after_dispatch")
+        order = next(iter(found.values()))
+        reply = ADDRESS_CHANGEABLE_REPLY.format(order_id=order["order_id"], status=_STATUS_WORDING.get(order["status"], order["status"]))
+        return Decision("L0", reply, f"{order['order_id']},{ADDRESS_FAQ}", escalate_reason="address_change_request")
 
     summaries = [order_summary(order) for order in found.values()]
     if missing:
@@ -228,7 +237,7 @@ def _orders(kb: KnowledgeBase, content: str, ids: list[str], anchors: list[str],
         reply = "\n".join([*summaries, UNKNOWN_ORDER_REPLY.format(orders=orders)])
         return Decision("L0", reply, ",".join(found) or None, escalate_reason="unknown_order_id")
 
-    policies = [faq for faq in anchors if faq != ADDRESS_FAQ] + ([ADDRESS_FAQ] if wants_address_change else [])
+    policies = [faq for faq in anchors if faq != ADDRESS_FAQ]
     if not policies:
         match = kb.semantic_match(content)  # e.g. "can I still get a refund for ORD-9105?"
         policies = [match] if match and match != ADDRESS_FAQ else []

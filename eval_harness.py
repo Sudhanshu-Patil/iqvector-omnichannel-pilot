@@ -124,18 +124,21 @@ def run(client, llm_calls, llm_label: str, target: str) -> tuple[str, bool]:
         stored = runner.stored_text(result["conversation_id"])
         brief_rows.append((case, result, check_brief_case(case, result, stored)))
 
-    # C31: replay the first webhook exactly as delivered.
-    first_case, first = brief_rows[0][0], brief_rows[0][1]
+    # C31: replay C05 exactly as delivered. C05 is an L1 case, so a re-run would call the model.
+    first_case, first = next((c, r) for c, r, _ in brief_rows if c["case_id"] == "C05")
     count_before, calls_before = runner.message_count(first["conversation_id"]), llm_calls()
     replay = client.post("/api/v1/message", json=first["_payload"]).json()
     same_body = {k: v for k, v in replay.items() if k not in ("duplicate_webhook_ignored", "latency_ms")} == {
         k: v for k, v in first.items() if k not in ("duplicate_webhook_ignored", "latency_ms", "_payload")
     }
+    calls = llm_calls()
     duplicate_checks = {
         "duplicate_webhook_ignored is true": replay["duplicate_webhook_ignored"] is True,
         "same response as the first delivery": same_body,
         "no new message rows": runner.message_count(first["conversation_id"]) == count_before,
-        "no LLM call": llm_calls() == calls_before,
+        # In-process the model calls are counted; remotely, a replay served in a few ms cannot
+        # have waited on a model (the original L1 turn took hundreds).
+        "no LLM call": calls == calls_before if calls is not None else replay["latency_ms"] <= 20,
     }
 
     edge_rows = []
@@ -225,7 +228,7 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
         f"## C31: duplicate webhook (replay of {first_case['case_id']})",
         "",
         *[f"- {'PASS' if ok else 'FAIL'}: {name}" for name, ok in duplicate_checks.items()],
-        f"- Replay latency: {replay['latency_ms']} ms",
+        f"- Replay latency: {replay['latency_ms']} ms (first delivery: {first_case_latency(brief_rows, first_case)} ms)",
         "",
         "## Production edge cases",
         "",
@@ -246,13 +249,27 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
         lines += ["", "Failures:", ""]
         lines += [f"- {c['id']} `{c['text']}`: {'; '.join(p)}" for c, _, p in edge_failures]
 
-    phrased = [(c, r) for c, r, _ in edge_rows if r["cost_usd"] > 0]
+    phrased = [(c.get("case_id") or c["id"], c["text"], r) for c, r, _ in brief_rows + edge_rows if r["cost_usd"] > 0]
     if phrased:
-        lines += ["", "### LLM-phrased replies, for human review", "", "| Case | Question | Source | Reply |", "|---|---|---|---|"]
-        for case, result in phrased:
+        lines += [
+            "",
+            "## LLM-phrased replies, for human review",
+            "",
+            "Every reply below passed the server's checks: numbers and names must appear in the source, and no "
+            "promised actions or compliance claims are allowed. Grounded answers that failed a check were sent "
+            "verbatim and are not listed.",
+            "",
+            "| Case | Question | Source | Cost | Reply |",
+            "|---|---|---|---|---|",
+        ]
+        for case_id, text, result in phrased:
             reply = result["reply"].replace("\n", " ").replace("|", "\\|")
-            lines.append(f"| {case['id']} | {case['text']} | {result['source_chunk_id']} | {reply} |")
+            lines.append(f"| {case_id} | {text} | {result['source_chunk_id']} | ${result['cost_usd']:.6f} | {reply} |")
     return "\n".join(lines) + "\n", all_ok
+
+
+def first_case_latency(brief_rows, case) -> int:
+    return next(r["latency_ms"] for c, r, _ in brief_rows if c is case)
 
 
 def main() -> int:
@@ -263,7 +280,13 @@ def main() -> int:
 
     if args.base_url:
         with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=60) as client:
-            scorecard, ok = run(client, lambda: 0, "as configured on the server (non-zero cost = Groq answered)", args.base_url)
+            server_llm = client.get("/healthz").json().get("llm", {})
+            label = (
+                f"Groq on the server ({server_llm['L1']} for L1, {server_llm['L2']} for L2)"
+                if server_llm.get("enabled")
+                else "server has no GROQ_API_KEY: grounded answers are sent verbatim from the KB"
+            )
+            scorecard, ok = run(client, lambda: None, label, args.base_url)
     else:
         from fastapi.testclient import TestClient
 

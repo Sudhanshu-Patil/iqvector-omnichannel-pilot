@@ -37,7 +37,7 @@ def test_l0_share_meets_target(send):
     [
         ("Hello!", "L0", None, False),
         ("Where is my DHL order ORD-7741?", "L0", "ORD-7741", False),
-        ("Can I change the delivery address for ORD-8812?", "L2", "ORD-8812,faq_01", False),
+        ("Can I change the delivery address for ORD-8812?", "L0", "ORD-8812,faq_01", True),
         ("Can I still get a refund for ORD-9105?", "L2", "ORD-9105,faq_03", False),
         ("What is your refund window and do you accept SEPA?", "L2", "faq_03,faq_06", False),
         ("Which payment options can I use to pay you?", "L1", "faq_06", False),

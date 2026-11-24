@@ -12,7 +12,9 @@ It also includes:
 - a playground UI at `/`,
 - an evaluation harness covering the 30 brief cases plus 82 production-style edge cases.
 
-Results: [EVAL_SCORECARD.md](EVAL_SCORECARD.md). Engineering decisions and trade-offs: [docs/DECISIONS.md](docs/DECISIONS.md).
+- **Live demo:** https://iqvector-contact-center.onrender.com (playground) and [/docs](https://iqvector-contact-center.onrender.com/docs) (API). It runs on Render's free tier, so the first request after a quiet period can take about 50 seconds while the service wakes.
+- **Results:** [EVAL_SCORECARD.md](EVAL_SCORECARD.md), from the deployed service with Groq answering.
+- **Engineering decisions and trade-offs:** [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Run it
 
@@ -27,7 +29,7 @@ Open http://localhost:8000 for the playground and http://localhost:8000/docs for
 - Without `GROQ_API_KEY`, the service still runs: grounded answers are returned verbatim from the knowledge base instead of being phrased by an LLM.
 
 ```bash
-pytest                                            # 242 tests, no network needed
+pytest                                            # 250 tests, no network needed
 python eval_harness.py                            # 30 brief cases + edge cases, writes EVAL_SCORECARD.md
 python eval_harness.py --base-url https://<host>  # same run against a deployed instance
 ```

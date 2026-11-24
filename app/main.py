@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from mcp.server.transport_security import TransportSecuritySettings
 
-from app import tools
+from app import llm, tools
 from app.contracts import InboundWebhookEvent, OperatorAction, OperatorReply, RouterResponse
 from app.db import DATA_DIR, connect, init_db, transaction
 from app.gateway import MessageIdConflict, handle_message
@@ -124,7 +124,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():
-        return {"ok": True}
+        return {"ok": True, "llm": {"enabled": llm.enabled(), **llm.MODELS}}
 
     @app.get("/", include_in_schema=False)
     def playground():

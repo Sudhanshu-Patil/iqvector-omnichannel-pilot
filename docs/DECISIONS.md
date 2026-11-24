@@ -12,9 +12,18 @@ The router, not the model, decides one of three outcomes:
 A grounded reply goes to the LLM together with only the redacted question and the grounded chunk(s). It must return `{answer, grounded}` through Groq's strict JSON-schema mode. The source text is sent verbatim instead if any of these hold:
 - the JSON is bad,
 - `grounded` is false,
-- the answer contains a number that isn't in the source,
 - the call times out,
-- the call would exceed the per-turn budget.
+- the call would exceed the per-turn budget,
+- the answer fails one of the deterministic checks below.
+
+| Check | What it rejects | Live failure it catches |
+|---|---|---|
+| Numbers | any number not in the source or the question | an invented price, limit or date |
+| Names | any capitalised name or term (other than a sentence's first word) that isn't in the source | "We do not accept PayPal" when the KB never mentions PayPal; "the Starter plan includes 600 requests" |
+| Promises | promised actions ("we can process…", "I'll refund…") | |
+| Claims | compliance or guarantee wording ("aligns with", "compliant", "certified") the source doesn't contain | |
+
+The names, promises and claims checks were added after the model produced exactly those failures in live testing (decision 13). The prompt forbids them too, but a prompt is not a guarantee.
 
 **Why.** "0% hallucinations" and "0% PII leaks" have to hold under every failure mode, including a missing key, a Groq outage or an over-eager model. With this split the model can make an answer read better, but it cannot turn a refusal into an answer. It cannot cite a source the router did not choose either.
 
@@ -140,7 +149,7 @@ The last two are matched on a normalised copy of the text that is used only for 
 - billing problems in any wording ("charged me 2x", "unauthorized charge", "pending hold")
 - requests for a human, including "manager", "call me" and "I don't want a bot"
 - refund or cancellation requests and refund-status questions, which the assistant cannot act on
-- address changes on dispatched orders
+- every address-change request on a known order: a dispatched order needs a carrier reroute; a processing order is answered "it can still be changed" and handed to a specialist who makes the edit
 - unknown order IDs
 - no grounded answer
 - any internal error, so the message is not lost
@@ -213,6 +222,24 @@ The first probe found real defects:
 | "thanks" and emoji were escalated to a human | |
 
 All of them are fixed, and the whole set now runs in pytest and in the eval harness.
+
+**A second round ran against the deployed service with Groq answering.** All acceptance targets passed, but reviewing the phrased replies found four the bot should not send:
+
+| Case | Question | What the model said | Problem |
+|---|---|---|---|
+| E58 | "IBAN … for the SEPA refund" | "We can process a SEPA refund in EUR to the IBAN you provided." | Promised an action the bot cannot take, on a policy the KB doesn't have |
+| E33 | "GDPR?" | a correct storage answer, then "…which aligns with GDPR requirements" | A compliance claim the KB never makes |
+| E31 | "do u take paypal" | "We do not accept PayPal." | A firm answer about a method the KB never mentions |
+| E28 | "Can I change the delivery address for ORD-8812?" | "Yes, you can." | Correct, but nobody makes the change, so the customer is stuck |
+
+The model marked all four `grounded: true`, so the self-report was not enough.
+
+**Fixes:**
+- E58, E33 and E31 are now rejected by the name, promise and claim checks in decision 1, and the source text is sent instead. Each is pinned by a unit test using the exact wording the model produced.
+- E58 is also routed as a refund request ("for the … refund"), so it no longer reaches the model.
+- E28 is an L0 escalation: the order can still be changed, and a specialist makes the edit.
+
+The scorecard lists every LLM-phrased reply so a person can review the wording on each run.
 
 ## 14. Smaller choices
 

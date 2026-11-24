@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: iqvector-contact-center
+    runtime: python
+    plan: free
+    # The embedding model is downloaded at build time into the project folder, so the service
+    # never fetches it while serving requests.
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python -c "from model2vec import StaticModel; StaticModel.from_pretrained('minishlab/potion-base-8M').save_pretrained('models/potion-base-8M')"
+    startCommand: uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: GROQ_API_KEY
+        sync: false  # set in the Render dashboard; never committed

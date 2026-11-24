@@ -1,0 +1,84 @@
+{
+  "orders": [
+    {
+      "order_id": "ORD-7741",
+      "customer_email": "elena.rostova@example.com",
+      "status": "in_transit",
+      "carrier": "DHL Express",
+      "tracking_number": "DHL-994817263",
+      "eta": "2026-11-26 18:00 CET",
+      "items": ["IQ Vector Enterprise Node License", "Hardware Security Key"],
+      "total_eur": 490.00,
+      "can_change_address": false,
+      "notes": "Already dispatched from hub; address change requires human operator override with DHL."
+    },
+    {
+      "order_id": "ORD-8812",
+      "customer_email": "marco.rossi@example.com",
+      "status": "processing",
+      "carrier": "FedEx",
+      "tracking_number": null,
+      "eta": "2026-11-28",
+      "items": ["Annual Analytics Subscription"],
+      "total_eur": 1200.00,
+      "can_change_address": true,
+      "notes": "Invoice #INV-902 shows a pending duplicate authorization hold."
+    },
+    {
+      "order_id": "ORD-9105",
+      "customer_email": "david.chen@example.com",
+      "status": "delivered",
+      "carrier": "UPS",
+      "tracking_number": "1Z9999999999999999",
+      "eta": "Delivered on 2026-11-20",
+      "items": ["Quant Risk API Tier-1"],
+      "total_eur": 850.00,
+      "can_change_address": false,
+      "notes": "Delivered and signed at reception."
+    }
+  ],
+  "faq_kb": [
+    {
+      "id": "faq_01",
+      "topic": "shipping_address_change",
+      "keywords": ["change address", "delivery address", "reroute", "DHL", "wrong address"],
+      "answer": "Address changes are only possible while an order is in 'processing' status. Once an order is 'in_transit' or 'delivered', automated changes are blocked and a human operator must manually submit a carrier reroute request via escalate_to_human."
+    },
+    {
+      "id": "faq_02",
+      "topic": "double_charge_billing",
+      "keywords": ["charged twice", "double charge", "duplicate charge", "invoice dispute", "billing error"],
+      "answer": "Any billing dispute, unrecognized charge, or duplicate authorization hold must be immediately escalated to a human billing specialist via escalate_to_human."
+    },
+    {
+      "id": "faq_03",
+      "topic": "return_and_refund_policy",
+      "keywords": ["return", "refund window", "cancel order", "money back"],
+      "answer": "Customers can request a full refund within 14 calendar days of delivery for physical hardware keys and within 30 calendar days of purchase for annual software subscriptions, provided license activation keys have not been revoked."
+    },
+    {
+      "id": "faq_04",
+      "topic": "api_rate_limits_and_sla",
+      "keywords": ["rate limit", "SLA", "uptime", "requests per minute", "429"],
+      "answer": "Standard Enterprise Node Licenses include a rate limit of 600 requests per minute (10 RPS) and a 99.9% monthly uptime SLA. Burst capacity up to 1,200 RPM can be enabled upon request."
+    },
+    {
+      "id": "faq_05",
+      "topic": "gdpr_data_residency_and_pii",
+      "keywords": ["GDPR", "EU AI Act", "data residency", "where is data stored", "encryption"],
+      "answer": "All customer and candidate data is stored in our EU Sovereign Vault (Frankfurt / Dublin) encrypted with AES-256 at rest and TLS 1.3 in transit. Raw PII is redacted prior to any external LLM call."
+    },
+    {
+      "id": "faq_06",
+      "topic": "supported_payment_methods",
+      "keywords": ["payment method", "SEPA", "SWIFT", "credit card", "wire transfer"],
+      "answer": "We accept SEPA Instant transfers in EUR, international SWIFT wire transfers in USD/GBP/EUR, and corporate Visa/Mastercard cards. We do not accept cryptocurrency or cash payments."
+    },
+    {
+      "id": "faq_07",
+      "topic": "support_operating_hours",
+      "keywords": ["support hours", "business hours", "when are operators online", "working hours"],
+      "answer": "Our AI Contact Center operates 24/7 across Web, Telegram, and Email. Live human specialists are online Monday through Friday from 08:00 to 20:00 CET."
+    }
+  ]
+}

@@ -212,7 +212,7 @@ def _route(kb: KnowledgeBase, text: str, injection: bool, state: str, llm_allowe
         if PII_TOKEN.search(text) and len(tokenize(content)) <= 2:
             return Decision("L0", HELP_REPLY)  # "my email is [REDACTED_EMAIL]": details, but no question yet
         return Decision("L2", REFUSAL_REPLY, escalate_reason="no_grounded_answer")
-    return _answer(text, {faq: kb.answers[faq] for faq in anchors}, "L1" if len(anchors) == 1 else "L2", llm_allowed)
+    return _answer(content, {faq: kb.answers[faq] for faq in anchors}, "L1" if len(anchors) == 1 else "L2", llm_allowed)
 
 
 def _orders(kb: KnowledgeBase, content: str, ids: list[str], anchors: list[str], llm_allowed: bool) -> Decision:

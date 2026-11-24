@@ -124,7 +124,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():
-        return {"ok": True, "llm": {"enabled": llm.enabled(), **llm.MODELS}}
+        # RENDER_GIT_COMMIT is set by Render on every deploy; it lets a remote eval name the exact code it ran against.
+        return {"ok": True, "commit": os.getenv("RENDER_GIT_COMMIT", "")[:7], "llm": {"enabled": llm.enabled(), **llm.MODELS}}
 
     @app.get("/", include_in_schema=False)
     def playground():

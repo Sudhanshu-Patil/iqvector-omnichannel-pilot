@@ -112,7 +112,7 @@ def check_edge_case(case: dict, result: dict, stored: str) -> list[str]:
     return problems
 
 
-def run(client, llm_calls, llm_label: str, target: str) -> tuple[str, bool]:
+def run(client, llm_calls, llm_label: str, target: str, commit: str) -> tuple[str, bool]:
     run_id = uuid.uuid4().hex[:8]
     runner = Runner(client, run_id)
     # One untimed request first, so latencies describe a running service rather than its first
@@ -147,10 +147,10 @@ def run(client, llm_calls, llm_label: str, target: str) -> tuple[str, bool]:
         stored = runner.stored_text(result["conversation_id"])
         edge_rows.append((case, result, check_edge_case(case, result, stored)))
 
-    return build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows, llm_label, target)
+    return build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows, llm_label, target, commit)
 
 
-def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows, llm_label, target) -> tuple[str, bool]:
+def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows, llm_label, target, commit) -> tuple[str, bool]:
     results = [r for _, r, _ in brief_rows]
     by_category = {}
     for case, result, problems in brief_rows:
@@ -188,11 +188,10 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
     edge_failures = [(c, r, p) for c, r, p in edge_rows if p]
     all_ok = all(ok for *_, ok in targets) and not edge_failures
 
-    commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
     lines = [
         "# Evaluation Scorecard",
         "",
-        f"- Run: {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}, commit `{commit or 'uncommitted'}`",
+        f"- Run: {datetime.now(timezone.utc):%Y-%m-%d %H:%M UTC}, commit `{commit}`",
         f"- Target: {target}",
         f"- LLM tier: {llm_label}",
         f"- Result: **{'ALL TARGETS MET' if all_ok else 'TARGETS MISSED'}**",
@@ -280,13 +279,14 @@ def main() -> int:
 
     if args.base_url:
         with httpx.Client(base_url=args.base_url.rstrip("/"), timeout=60) as client:
-            server_llm = client.get("/healthz").json().get("llm", {})
+            health = client.get("/healthz").json()
+            server_llm = health.get("llm", {})
             label = (
                 f"Groq on the server ({server_llm['L1']} for L1, {server_llm['L2']} for L2)"
                 if server_llm.get("enabled")
                 else "server has no GROQ_API_KEY: grounded answers are sent verbatim from the KB"
             )
-            scorecard, ok = run(client, lambda: None, label, args.base_url)
+            scorecard, ok = run(client, lambda: None, label, args.base_url, health.get("commit") or "unknown (deployed)")
     else:
         from fastapi.testclient import TestClient
 
@@ -306,8 +306,9 @@ def main() -> int:
             if llm.enabled()
             else "no GROQ_API_KEY: grounded answers are sent verbatim from the KB"
         )
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
         with tempfile.TemporaryDirectory() as tmp, TestClient(create_app(str(Path(tmp) / "eval.db"))) as client:
-            scorecard, ok = run(client, lambda: calls["n"], label, "in-process app, fresh database")
+            scorecard, ok = run(client, lambda: calls["n"], label, "in-process app, fresh database", commit or "uncommitted")
 
     Path(args.output).write_text(scorecard, encoding="utf-8")
     print(scorecard)

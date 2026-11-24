@@ -198,7 +198,9 @@ def _route(kb: KnowledgeBase, text: str, injection: bool, state: str, llm_allowe
 
     ids = order_ids(content)
     if ids:
-        return _orders(kb, content, ids, anchors, llm_allowed)
+        # An address sent alongside an order ID ("send ORD-8812 to [REDACTED_ADDRESS]") is a change request.
+        wants_address_change = bool(ADDRESS_CHANGE.search(content)) or "[REDACTED_ADDRESS]" in text
+        return _orders(kb, content, ids, anchors, llm_allowed, wants_address_change)
 
     if anchors == [HOURS_FAQ]:
         return Decision("L0", kb.answers[HOURS_FAQ], HOURS_FAQ)
@@ -215,12 +217,14 @@ def _route(kb: KnowledgeBase, text: str, injection: bool, state: str, llm_allowe
     return _answer(content, {faq: kb.answers[faq] for faq in anchors}, "L1" if len(anchors) == 1 else "L2", llm_allowed)
 
 
-def _orders(kb: KnowledgeBase, content: str, ids: list[str], anchors: list[str], llm_allowed: bool) -> Decision:
+def _orders(
+    kb: KnowledgeBase, content: str, ids: list[str], anchors: list[str], llm_allowed: bool, wants_address_change: bool
+) -> Decision:
     found = {order_id: order for order_id in ids if (order := tools.find_order(order_id))}
     missing = [order_id for order_id in ids if order_id not in found]
 
     # Address changes always need a human: either a carrier reroute or an edit the assistant can't make.
-    if ADDRESS_CHANGE.search(content) and found:
+    if wants_address_change and found:
         locked = next((o for o in found.values() if not o["can_change_address"]), None)
         if locked:
             reply = ADDRESS_LOCKED_REPLY.format(

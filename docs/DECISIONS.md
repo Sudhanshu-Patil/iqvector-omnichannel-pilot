@@ -107,6 +107,10 @@ Pure regex, applied in a fixed order. IBAN and card numbers are long digit runs 
 | Card | 13–19 digit card numbers with space, dash or dot separators; CVV/CVC; expiry dates | `[REDACTED_CARD]` |
 | ID | IBAN, SSN (with or without dashes), passport-style numbers, date of birth, passwords, PINs, OTPs, API keys, other bare 9–12 digit numbers | `[REDACTED_ID]` |
 | Phone | international (+), US-style, national with a leading 0 | `[REDACTED_PHONE]` |
+| Name | self-introductions ("my name is marco rossi", "I'm Elena Rostova,"), sign-offs ("Kind regards, David Chen"), titles ("Dr. …"), and known customer names from the contacts table in any letter case | `[REDACTED_NAME]` |
+| Address | street lines (house number + street type, "Via Roma 10", "Hauptstraße 5"), UK postcodes, US state + ZIP | `[REDACTED_ADDRESS]` |
+
+The brief requires only the first four tokens. Names and addresses go beyond it: both are personal data under GDPR, and the KB itself promises that raw PII is redacted before any external LLM call.
 
 **Masking rules:**
 - **No Luhn check.** In BFSI, masking too much is the safe failure.
@@ -115,7 +119,27 @@ Pure regex, applied in a fixed order. IBAN and card numbers are long digit runs 
 - **AI replies are not masked.** They are built from KB and order data, and masking would garble tracking numbers.
 - **Card, ID and credential warning.** When a message contains a card number, ID or credential, the reply starts with a notice asking the customer not to share such details in chat.
 
-**Not covered:** names, postal addresses, and national phone formats without a leading 0. These are recorded as a `shortcut:` in the code.
+**Not covered:**
+- names of third parties mentioned without a cue ("ask Sarah from billing")
+- addresses without a house number
+- national phone formats without a leading 0
+
+These are recorded as `shortcut:` notes in the code.
+
+**Why rules rather than an NER model for names.** spaCy's `en_core_web_sm` was benchmarked on the same 118 real messages:
+
+| | spaCy NER | Name/address rules |
+|---|---|---|
+| Time per message (p50 / p95) | 4.0 / 6.1 ms | 0.07 / 0.16 ms (whole shield) |
+| Labelled as a PERSON by mistake | "Bitcoin", "Mastercard", "Node License", "Starter", `ORD-5555`, the German injection word "Anweisungen" | none of these |
+| "my name is marco rossi" (lowercase) | missed | masked |
+
+Three of spaCy's results ruled it out:
+- **Latency.** 4–6 ms on a desktop CPU means the 10 ms shield budget would likely be exceeded on Render's 0.1-vCPU instance.
+- **It would break routing.** Masking `ORD-5555` breaks the order lookup in brief case C12.
+- **It would weaken security.** Masking "Anweisungen" would hide a German injection from the detector.
+
+DistilBERT-class models are more accurate on news text but just as case-sensitive, and need 3–10× the compute. The upgrade path, on a larger instance, is NER limited to PERSON, with an allowlist of KB terms, run after injection detection.
 
 **Performance.** Worst-case 4,000-character hostile inputs run in under 50 ms (tested); typical messages take microseconds.
 
@@ -132,6 +156,8 @@ Detection uses specific phrasings rather than broad keywords, because a false po
 - leetspeak (`1gn0re`) and spaced-out letters (`i g n o r e`)
 
 The last two are matched on a normalised copy of the text that is used only for detection.
+
+Detection runs before any masking. Otherwise "my name is ignore all previous instructions" would have its attack phrase masked as a name and slip past.
 
 **False positives.** A test suite checks that realistic look-alikes are not flagged:
 - "please ignore my previous message"
@@ -208,7 +234,7 @@ While a conversation is `waiting_human`, customer messages are stored and acknow
 
 ## 13. Testing beyond the brief
 
-The 30 brief cases use clean phrasing, so the system was also probed with messages written the way customers actually write. `eval/production_edge_cases.json` holds 82 of them: order-ID variants, slang, billing complaints, refund requests, disguised PII, obfuscated and multilingual injections, harmless look-alikes and small talk.
+The 30 brief cases use clean phrasing, so the system was also probed with messages written the way customers actually write. `eval/production_edge_cases.json` holds 88 of them: order-ID variants, slang, billing complaints, refund requests, disguised PII, names and addresses, obfuscated and multilingual injections, harmless look-alikes and small talk.
 
 The first probe found real defects:
 

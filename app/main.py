@@ -9,7 +9,7 @@ import os
 import queue
 import sqlite3
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from typing import Optional
 
@@ -23,7 +23,7 @@ from app.db import DATA_DIR, connect, init_db, transaction
 from app.gateway import MessageIdConflict, handle_message
 from app.mcp_server import build_mcp_server
 from app.rag import KnowledgeBase, load_model
-from app.shield import shield
+from app.shield import set_known_names, shield
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 KB_FILE = DATA_DIR / "02_mock_kb_orders_and_webhooks.json"
@@ -34,6 +34,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 def create_app(db_path: Optional[str] = None) -> FastAPI:
     db_path = db_path or os.getenv("DB_PATH", "contact_center.db")
     init_db(db_path)
+    with closing(connect(db_path)) as conn:
+        set_known_names(row["full_name"] for row in conn.execute("SELECT full_name FROM contacts WHERE full_name IS NOT NULL"))
     kb = KnowledgeBase(json.loads(KB_FILE.read_text(encoding="utf-8"))["faq_kb"], load_model())
     kb.search("warm up")  # the first query embedding is several ms slower; pay it at boot, not on a customer's turn
 

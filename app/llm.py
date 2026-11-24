@@ -88,6 +88,10 @@ def _ungrounded_reason(answer: str, context: str, question: str) -> Optional[str
         return "number not in the source"  # an invented price, limit or date
     def in_context(term: str) -> bool:
         # Whole words only: "US" must not count as present because "customer" contains "us".
+        # Longer terms may differ by a plural ("License" in the answer, "Licenses" in the source).
+        if len(term) > 3:
+            stem = term[:-1] if term.lower().endswith("s") else term
+            return re.search(rf"\b{re.escape(stem)}(?:s|es)?\b", context, re.IGNORECASE) is not None
         return re.search(rf"\b{re.escape(term)}\b", context, re.IGNORECASE) is not None
 
     for match in re.finditer(r"\b[A-Z][\w-]*", answer):

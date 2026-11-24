@@ -2,6 +2,10 @@
 
 Pure regex, no I/O, well under a millisecond per message. Everything downstream (DB, logs, LLM)
 only ever sees `ShieldResult.redacted_text`; the raw message never leaves `shield()`.
+
+Masks into [REDACTED_EMAIL], [REDACTED_PHONE], [REDACTED_CARD] and [REDACTED_ID] as the brief
+requires, plus [REDACTED_ADDRESS] and [REDACTED_NAME], which go beyond it: names are personal data
+under GDPR, and the KB promises that raw PII never reaches an external LLM.
 """
 
 import re
@@ -51,6 +55,55 @@ _PII_PATTERNS = [
     ("[REDACTED_ID]", re.compile(r"(?<![\w+./-])\d{9,12}\b")),
 ]
 
+# Street addresses and postcodes. A street line needs a house number plus a street-type word,
+# and the words in between may not be filler, so "2 questions about your road map" survives.
+_STREET_FILLER = r"(?i:about|your|my|the|a|an|of|for|to|in|on|and|or|with|per|by|days?|weeks?|times?|requests?|orders?|items?)\b"
+_STREET_TYPE = r"(?i:street|st|road|rd|avenue|ave|lane|ln|boulevard|blvd|drive|dr|court|ct|way|place|pl|square|sq|terrace|close|crescent)"
+_ADDRESS_PATTERNS = [
+    re.compile(rf"\b\d{{1,5}}[A-Za-z]?,?\s+(?:(?!{_STREET_FILLER})[A-Za-z][\w'-]*\s+){{1,3}}{_STREET_TYPE}\b\.?"),
+    re.compile(r"\bVia\s+[A-Z][\w'-]*(?:\s+[A-Z][\w'-]*){0,2}\s+\d{1,4}[A-Za-z]?\b"),  # Italian, "Via Roma 10"
+    re.compile(r"\b(?i:viale|piazza|corso|rue|calle|carrer|avenida|ulica|bulevar)\s+(?:[\w'-]+\s+){1,3}\d{1,4}[A-Za-z]?\b"),
+    re.compile(r"\b[\w'-]*(?i:straße|strasse|str\.|weg|gasse|platz|allee)\s+\d{1,4}[a-z]?\b"),  # German, "Hauptstraße 5"
+    re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b"),  # UK postcode, "NW1 6XE"
+    re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b"),  # US state + ZIP, "CA 94105"
+]
+
+# Person names, where support chat actually contains them: a customer introducing themselves or
+# signing off, or a title before a surname. Names of known customers are added at startup
+# (set_known_names). A general NER model was measured and rejected: see docs/DECISIONS.md.
+# Elena, O'Brien, McDonald, Jean-Luc; a title is never part of the name itself.
+_NAME_WORD = r"(?!(?:Mr|Mrs|Ms|Miss|Dr|Prof)\b)(?:[A-Z]')?[A-Z][a-z]+(?:[A-Z][a-z]+)?(?:-[A-Z][a-z]+)*"
+_NAME = rf"{_NAME_WORD}(?:\s+{_NAME_WORD}){{0,2}}"
+# What follows a self-introduction: "I'm Elena Rostova, ...", "I am David Chen from Acme", "I'm Elena."
+# Without it, "I'm Ready to upgrade" would lose "Ready".
+_AFTER_INTRO = r"(?=\s*(?:[,.!?;:)]|$|\b(?:from|and|here|with|at|of)\b))"
+_NOT_A_NAME = r"(?i:on|in|at|the|a|an|not|is|was|and|or|but|for|with|from|to|of|my|your|still|also|correct|wrong|spelled|missing|listed)\b"
+_ANY_CASE_NAME = rf"(?!{_NOT_A_NAME})[A-Za-z][a-z'-]+(?:\s+(?!{_NOT_A_NAME})[A-Za-z][a-z'-]+){{0,2}}"
+_NAME_PATTERNS = [
+    # "my name is marco rossi": the cue is unambiguous, so lowercase names count too.
+    re.compile(rf"(?P<keep>\b(?i:my\s+name\s+is|my\s+name's|name\s*:)\s+){_ANY_CASE_NAME}"),
+    re.compile(rf"(?P<keep>\b(?i:i\s+am|i'm)\s+){_NAME}{_AFTER_INTRO}"),
+    re.compile(rf"(?P<keep>(?:^|\n)[ \t]*(?i:(?:hi|hello|hey)[,!]?\s+)?(?i:this\s+is)\s+){_NAME}{_AFTER_INTRO}"),
+    re.compile(rf"(?P<keep>\b(?i:mr|mrs|ms|miss|dr|prof)\.?\s+){_NAME}"),
+    re.compile(
+        rf"(?P<keep>\b(?i:(?:kind|best|warm|many)\s+regards|regards|best\s+wishes|best|thanks|thank\s+you|cheers"
+        rf"|sincerely|yours\s+(?:truly|sincerely|faithfully))\b\s*[,!.]?\s*){_NAME}"
+    ),
+]
+_known_names: list[re.Pattern] = []
+
+
+def set_known_names(names) -> None:
+    """Mask these customer names wherever they appear, in any letter case.
+
+    shortcut: loaded once at startup from the contacts table; reload on CRM sync once contacts
+    get names from somewhere other than the seed data.
+    """
+    global _known_names
+    names = sorted({name.strip() for name in names if name and name.strip()}, key=len, reverse=True)
+    alternatives = "|".join(r"\s+".join(map(re.escape, name.split())) for name in names)
+    _known_names = [re.compile(rf"\b(?:{alternatives})\b", re.IGNORECASE)] if names else []
+
 _OVERRIDE_VERB = r"(?:ignore|forget|disregard|override|bypass|skip)"
 _OVERRIDE_FILLER = (
     r"(?:\s+(?:all|any|the|your|these|those|previous|prior|above|earlier|system|safety"
@@ -88,7 +141,7 @@ _INJECTION = re.compile(
     re.IGNORECASE,
 )
 
-_INVISIBLE = re.compile(r"[​-‏‪-‮⁠-⁩﻿]")  # zero-width and bidi controls
+_INVISIBLE = re.compile(r"[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")  # zero-width and bidi controls
 _LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"})
 _SPACED_LETTERS = re.compile(r"\b(?:\w[ .\-_*]){2,}\w\b")  # "i g n o r e" / "i.g.n.o.r.e"
 
@@ -113,8 +166,16 @@ def shield(text: str) -> ShieldResult:
     # NFKC folds full-width digits and look-alike letters, and zero-width / bidi control characters
     # are dropped, so none of them can slip a card number or an injection phrase past the patterns.
     text = _INVISIBLE.sub("", unicodedata.normalize("NFKC", text))
+    # Detect before masking: masking a "name" must never hide an injection phrase
+    # ("my name is ignore all previous instructions").
+    injection = bool(_INJECTION.search(_detection_view(text)))
+    patterns = [
+        *_PII_PATTERNS,
+        *(("[REDACTED_ADDRESS]", p) for p in _ADDRESS_PATTERNS),
+        *(("[REDACTED_NAME]", p) for p in [*_NAME_PATTERNS, *_known_names]),
+    ]
     entities = 0
-    for token, pattern in _PII_PATTERNS:
+    for token, pattern in patterns:
         text, found = pattern.subn(_replace(token), text)
         entities += found
-    return ShieldResult(text, entities, bool(_INJECTION.search(_detection_view(text))))
+    return ShieldResult(text, entities, injection)

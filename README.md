@@ -10,7 +10,7 @@ A FastAPI service that takes customer messages from web chat, Telegram and email
 It also includes:
 - an MCP server with the two required tools,
 - a playground UI at `/`,
-- an evaluation harness covering the 30 brief cases plus 82 production-style edge cases.
+- an evaluation harness covering the 30 brief cases plus 88 production-style edge cases.
 
 - **Live demo:** https://iqvector-contact-center.onrender.com (playground) and [/docs](https://iqvector-contact-center.onrender.com/docs) (API). It runs on Render's free tier, so the first request after a quiet period can take about 50 seconds while the service wakes.
 - **Results:** [EVAL_SCORECARD.md](EVAL_SCORECARD.md), from the deployed service with Groq answering.
@@ -29,7 +29,7 @@ Open http://localhost:8000 for the playground and http://localhost:8000/docs for
 - Without `GROQ_API_KEY`, the service still runs: grounded answers are returned verbatim from the knowledge base instead of being phrased by an LLM.
 
 ```bash
-pytest                                            # 253 tests, no network needed
+pytest                                            # 280 tests, no network needed
 python eval_harness.py                            # 30 brief cases + edge cases, writes EVAL_SCORECARD.md
 python eval_harness.py --base-url https://<host>  # same run against a deployed instance
 ```
@@ -97,7 +97,7 @@ The tools are served over HTTP at `/mcp`, or over stdio:
 ```
 app/           FastAPI app, shield, identity, router, retrieval, LLM client, tools, MCP server, playground
 data/          the starter pack files, unchanged
-eval/          production edge cases (82 messages)
+eval/          production edge cases (88 messages)
 tests/         unit, API, MCP and edge-case tests
 eval_harness.py, EVAL_SCORECARD.md, docs/DECISIONS.md, render.yaml
 ```

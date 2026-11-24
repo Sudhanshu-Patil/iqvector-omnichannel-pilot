@@ -97,7 +97,9 @@ def _anchor_pattern(phrases: list[str]) -> re.Pattern:
 
 class KnowledgeBase:
     def __init__(self, faqs: list[dict], model: StaticModel):
-        self.answers = {faq["id"]: faq["answer"] for faq in faqs}
+        # Answers go to customers verbatim, so the KB's internal tool references are dropped
+        # ("...a human operator must ... submit a carrier reroute request via escalate_to_human.").
+        self.answers = {faq["id"]: re.sub(r"\s+via\s+escalate_to_human\b", "", faq["answer"]) for faq in faqs}
         self._ids = [faq["id"] for faq in faqs]
         # The KB ships curated keywords per FAQ; together with the topic name they are "anchors":
         # if one appears in the question, the FAQ is grounded deterministically.

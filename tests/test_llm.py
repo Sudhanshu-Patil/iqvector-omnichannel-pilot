@@ -67,6 +67,8 @@ STORAGE = {
         ({"faq_04": "Standard Enterprise Node Licenses include a rate limit of 600 requests per minute."},
          "What's the rate limit for the Starter plan?", "The Starter plan includes 600 requests per minute."),
         (STORAGE, "Are you certified?", "Yes, our storage is fully certified and compliant."),
+        # "us" occurs inside "customer": names must match whole words in the source.
+        (STORAGE, "Is my data stored in the US?", "Your data is stored in Frankfurt and Dublin, not in the US."),
     ],
 )
 def test_live_hallucination_patterns_are_rejected(monkeypatch, context, question, answer):

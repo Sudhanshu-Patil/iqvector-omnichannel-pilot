@@ -19,7 +19,7 @@ A grounded reply goes to the LLM together with only the redacted question and th
 | Check | What it rejects | Live failure it catches |
 |---|---|---|
 | Numbers | any number not in the source or the question | an invented price, limit or date |
-| Names | any capitalised name or term (other than a sentence's first word) that isn't in the source | "We do not accept PayPal" when the KB never mentions PayPal; "the Starter plan includes 600 requests" |
+| Names | any capitalised name or term (other than a sentence's first word) that isn't in the source as a whole word | "We do not accept PayPal" when the KB never mentions PayPal; "the Starter plan includes 600 requests" |
 | Promises | promised actions ("we can process…", "I'll refund…") | |
 | Claims | compliance or guarantee wording ("aligns with", "compliant", "certified") the source doesn't contain | |
 
@@ -240,6 +240,10 @@ The model marked all four `grounded: true`, so the self-report was not enough.
 - E28 is an L0 escalation: the order can still be changed, and a specialist makes the edit.
 
 The scorecard lists every LLM-phrased reply so a person can review the wording on each run.
+
+**The next review found two more issues, both fixed:**
+- **A bug in the names check.** It searched the source by substring, so "not in the US" passed because "customer" contains "us". It now requires a whole-word match.
+- **An internal tool name in a customer reply.** The KB's own text ("submit a carrier reroute request via escalate_to_human") reached a customer. Customer-facing answers now drop that reference.
 
 ## 14. Smaller choices
 

@@ -43,5 +43,10 @@ def test_paraphrases_are_grounded_by_meaning(kb, text, faq_id):
     assert kb.semantic_match(text) == faq_id
 
 
+def test_customer_facing_answers_hide_internal_tool_names(kb):
+    assert all("escalate_to_human" not in answer for answer in kb.answers.values())
+    assert kb.answers["faq_01"].endswith("must manually submit a carrier reroute request.")
+
+
 def test_order_questions_without_an_id_are_not_grounded(kb):
     assert kb.semantic_match("What is the status of my order?") is None

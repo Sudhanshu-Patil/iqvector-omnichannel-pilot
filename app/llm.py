@@ -86,15 +86,18 @@ def _ungrounded_reason(answer: str, context: str, question: str) -> Optional[str
     """Why an answer can't be trusted, or None. Each check targets a failure seen in live testing."""
     if not _numbers(answer) <= _numbers(context + " " + question):
         return "number not in the source"  # an invented price, limit or date
-    lowered_context = context.lower()
+    def in_context(term: str) -> bool:
+        # Whole words only: "US" must not count as present because "customer" contains "us".
+        return re.search(rf"\b{re.escape(term)}\b", context, re.IGNORECASE) is not None
+
     for match in re.finditer(r"\b[A-Z][\w-]*", answer):
         before = answer[: match.start()].rstrip()
         sentence_start = not before or before[-1] in ".!?:\n"
-        if not sentence_start and match.group() != "I" and match.group().lower() not in lowered_context:
+        if not sentence_start and match.group() != "I" and not in_context(match.group()):
             return "name not in the source"  # "We do not accept PayPal" when the KB never mentions PayPal
     if _ACTION_PROMISE.search(answer):
         return "promises an action"  # "We can process a SEPA refund to your IBAN"
-    if any(term.lower() not in lowered_context for term in _CLAIM_TERMS.findall(answer)):
+    if not all(in_context(term) for term in _CLAIM_TERMS.findall(answer)):
         return "unsupported claim"  # "...which aligns with GDPR requirements"
     return None
 

@@ -1,5 +1,7 @@
 import threading
 from contextlib import closing
+
+import pytest
 from datetime import datetime, timezone
 
 from app import gateway, llm
@@ -215,6 +217,21 @@ def test_no_raw_pii_anywhere_in_stored_messages(send, db_path):
             if raw == "842":  # the CVV: too short to search the whole table; covered per-message in test_shield
                 continue
             assert raw not in stored
+
+
+def test_a_request_that_dies_mid_transaction_does_not_poison_the_pooled_connection(send, client, monkeypatch):
+    import app.main as main_module
+
+    def crash_mid_transaction(conn, kb, event):
+        conn.execute("BEGIN IMMEDIATE")
+        raise RuntimeError("simulated crash with a transaction open")
+
+    monkeypatch.setattr(main_module, "handle_message", crash_mid_transaction)
+    with pytest.raises(RuntimeError):
+        send("Hello!", user="crash_user")
+    monkeypatch.undo()
+    # Same pooled connection, next request: it must not inherit the open transaction or its write lock.
+    assert send("Check status of order ORD-7741 please.", user="after_crash")["source_chunk_id"] == "ORD-7741"
 
 
 def test_request_validation(send):

@@ -6,9 +6,10 @@ Run with:  uvicorn app.main:create_app --factory
 import json
 import logging
 import os
+import queue
 import sqlite3
 import uuid
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -34,6 +35,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     db_path = db_path or os.getenv("DB_PATH", "contact_center.db")
     init_db(db_path)
     kb = KnowledgeBase(json.loads(KB_FILE.read_text(encoding="utf-8"))["faq_kb"], load_model())
+    kb.search("warm up")  # the first query embedding is several ms slower; pay it at boot, not on a customer's turn
+
+    # Connections are reused across requests. Closing the last connection to a WAL database forces
+    # a checkpoint and deletes the WAL file, which cost more than the whole routing decision.
+    pool: queue.SimpleQueue = queue.SimpleQueue()
 
     mcp = build_mcp_server(db_path)
     # Stateless JSON mode: each tool call is self-contained, so any instance can serve it.
@@ -48,6 +54,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         async with mcp.session_manager.run():
             yield
+        while not pool.empty():
+            pool.get_nowait().close()
 
     app = FastAPI(
         title="IQ Vector Omnichannel Contact Center",
@@ -57,8 +65,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     )
 
     def get_conn():
-        with closing(connect(db_path)) as conn:
+        """One connection per request, borrowed exclusively from the pool and returned afterwards."""
+        try:
+            conn = pool.get_nowait()
+        except queue.Empty:
+            conn = connect(db_path)
+        try:
             yield conn
+        finally:
+            if conn.in_transaction:  # never hand an open transaction to the next request
+                conn.rollback()
+            pool.put(conn)
 
     def require_conversation(conn: sqlite3.Connection, conversation_id: str) -> sqlite3.Row:
         row = conn.execute("SELECT * FROM conversations WHERE conversation_id = ?", (conversation_id,)).fetchone()

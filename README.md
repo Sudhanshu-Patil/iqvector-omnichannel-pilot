@@ -63,7 +63,7 @@ POST /api/v1/message (CONTRACT #1)
 
 | Tier | Handles | Cost |
 |---|---|---|
-| **L0** | Injection blocks, small talk, order lookups by ID, support hours, and immediate escalations (billing disputes, requests for a human, refund/cancellation requests, address changes after dispatch, unknown order IDs) | $0, ~2 ms |
+| **L0** | Injection blocks, small talk, order lookups by ID, support hours, and immediate escalations (billing disputes, requests for a human, refund/cancellation requests, address changes after dispatch, unknown order IDs) | $0, single-digit milliseconds |
 | **L1** | One grounded FAQ, phrased by `gpt-oss-20b` | Fractions of a cent |
 | **L2** | Questions that need several sources, phrased by `gpt-oss-120b`; or a grounded refusal that hands the conversation to a human | |
 

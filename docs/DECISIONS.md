@@ -245,7 +245,11 @@ The scorecard lists every LLM-phrased reply so a person can review the wording o
 
 **Storage.**
 - SQLite runs in WAL mode with `synchronous = NORMAL`. A power cut can lose the last commits but never corrupts the file, and commits stay well inside the 10 ms L0 budget.
-- Each request gets its own short-lived connection.
+- **Connections are pooled and reused.** Each request borrows one exclusively and returns it, rolled back if a transaction was left open.
+  - The first live run on Render measured L0 p95 at 11.4 ms, over budget. Profiling showed routing took 0.46 ms; opening and closing a connection per request took most of the rest.
+  - Closing the last connection to a WAL database forces a checkpoint and deletes the WAL file.
+  - Reusing connections cut an L0 order lookup from 6.6 ms to 1.0 ms end to end.
+- The query-embedding path is warmed at startup, so the first customer after a deploy doesn't pay its one-time cost.
 - The provided schema is used unchanged, plus one table.
 
 **Latency** is measured inside the handler, from the shield to the final commit. The harness sends one untimed warm-up request first, so results describe a running service rather than its first connection.

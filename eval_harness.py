@@ -253,16 +253,26 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
         lines += ["", "Failures:", ""]
         lines += [f"- {c['id']} `{c['text']}`: {'; '.join(p)}" for c, _, p in edge_failures]
 
-    phrased = [(c.get("case_id") or c["id"], c["text"], r) for c, r, _ in brief_rows + edge_rows if r["cost_usd"] > 0]
+    from app.rag import faq_answers
+
+    faq_text = faq_answers(json.loads((ROOT / "data" / "02_mock_kb_orders_and_webhooks.json").read_text(encoding="utf-8"))["faq_kb"])
+
+    def reworded(result: dict) -> bool:
+        # A billed turn whose reply holds the cited FAQ text itself was not worded by the model: its
+        # answer failed a check, or it repeated the source unchanged.
+        texts = [faq_text[s] for s in (result["source_chunk_id"] or "").split(",") if s in faq_text]
+        return result["cost_usd"] > 0 and not (texts and all(t in result["reply"] for t in texts))
+
+    phrased = [(c.get("case_id") or c["id"], c["text"], r) for c, r, _ in brief_rows + edge_rows if reworded(r)]
     if phrased:
         lines += [
             "",
             "## LLM-phrased replies, for human review",
             "",
             "Every reply below passed the server's checks: numbers and names must appear in the source, and no "
-            "promised actions, compliance claims or rulings on the customer's own case are allowed. Grounded "
-            "answers that failed a check were sent "
-            "verbatim and are not listed.",
+            "promised actions, compliance claims, rulings on the customer's own case or refusals are allowed. "
+            "Replies that are the source text itself are not listed: the model's answer failed a check, or it "
+            "repeated the source word for word.",
             "",
             "| Case | Question | Source | Cost | Reply |",
             "|---|---|---|---|---|",

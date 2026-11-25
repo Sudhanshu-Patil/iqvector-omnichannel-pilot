@@ -50,6 +50,12 @@ _VERDICT = re.compile(
     r"|\byou(?:\s+are|['’]re)\s+(?:within|inside|outside|past|beyond)\b",
     re.IGNORECASE,
 )
+# The router only calls the model for a question it has already grounded in CONTEXT, so a refusal
+# would leave the customer with neither the answer nor a human.
+_REFUSAL = re.compile(
+    r"\b(?:sorry|apologi[sz]e|unable\s+to|can(?:not|['’]t)\s+(?:help|assist|process|provide|answer|verify|share|do))\b",
+    re.IGNORECASE,
+)
 
 RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -67,7 +73,7 @@ RESPONSE_FORMAT = {
 
 
 class Phrased(NamedTuple):
-    answer: str
+    answer: Optional[str]  # None: the answer failed a check, but the call was still billed
     cost_usd: float
     tokens: int
 
@@ -113,6 +119,8 @@ def _ungrounded_reason(answer: str, context: str, question: str) -> Optional[str
         return "unsupported claim"  # "...which aligns with GDPR requirements"
     if _VERDICT.search(answer):
         return "rules on the customer's case"  # "Yes, you are still within the 14-day window"
+    if _REFUSAL.search(answer):
+        return "refuses a grounded question"  # "I'm sorry, but I can't process that request."
     return None
 
 
@@ -130,8 +138,9 @@ def _chat(payload: dict) -> dict:
 def phrase(level: str, question: str, context: dict[str, str]) -> Optional[Phrased]:
     """Ask the tier's model to answer `question` from `context` ({source_id: text}) only.
 
-    Returns None when the call is over budget, fails, or its answer fails a grounding check;
-    the caller then sends the context verbatim, which is always grounded and costs nothing.
+    Returns None when nothing was billed (over budget, or the call failed). Otherwise returns the
+    call's cost, with `answer` None when the model's answer failed a grounding check. Without an
+    answer, the caller sends the context verbatim, which is always grounded.
     """
     model = MODELS[level]
     context_text = "\n".join(f"[{source}] {text}" for source, text in context.items())
@@ -155,20 +164,23 @@ def phrase(level: str, question: str, context: dict[str, str]) -> Optional[Phras
                 "response_format": RESPONSE_FORMAT,
             }
         )
-        parsed = json.loads(body["choices"][0]["message"]["content"])
-        answer, grounded = parsed["answer"].strip(), parsed["grounded"]
         usage = body["usage"]
         prompt_tokens, completion_tokens = int(usage["prompt_tokens"]), int(usage["completion_tokens"])
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         # Log the failure type only: the payload holds customer text.
         log.warning("llm call failed (model=%s): %s", model, type(exc).__name__)
         return None
-
-    reason = "model reported ungrounded" if grounded is not True or not answer else _ungrounded_reason(answer, context_text, question)
-    if reason:
-        log.info("llm answer rejected (model=%s): %s", model, reason)
-        return None
-
     price_in, price_out = _price(model)
     cost = (prompt_tokens * price_in + completion_tokens * price_out) / 1_000_000
-    return Phrased(answer, round(cost, 8), prompt_tokens + completion_tokens)
+    billed = Phrased(None, round(cost, 8), prompt_tokens + completion_tokens)
+
+    try:
+        parsed = json.loads(body["choices"][0]["message"]["content"])
+        answer, grounded = parsed["answer"].strip(), parsed["grounded"]
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        answer, grounded = "", False  # malformed output
+    reason = "no grounded answer" if grounded is not True or not answer else _ungrounded_reason(answer, context_text, question)
+    if reason:
+        log.info("llm answer rejected (model=%s): %s", model, reason)
+        return billed
+    return billed._replace(answer=answer)

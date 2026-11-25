@@ -42,9 +42,11 @@ def test_grounded_answer_is_used_and_costed(monkeypatch):
         '{"answer": "You have 21 days to return it.", "grounded": true}',  # a number not in the context
     ],
 )
-def test_unusable_answers_fall_back_to_the_source(monkeypatch, content):
+def test_unusable_answers_fall_back_to_the_source_but_are_still_costed(monkeypatch, content):
     monkeypatch.setattr(llm, "_chat", groq_reply(content))
-    assert llm.phrase("L1", "What is the refund window?", CONTEXT) is None
+    result = llm.phrase("L1", "What is the refund window?", CONTEXT)
+    assert result.answer is None
+    assert result.cost_usd == pytest.approx((300 * 0.075 + 40 * 0.30) / 1_000_000)  # the call was billed
 
 
 PAYMENTS = {
@@ -73,11 +75,14 @@ ORDER_AND_REFUNDS = {
         (STORAGE, "Are you certified?", "Yes, our storage is fully certified and compliant."),
         # "us" occurs inside "customer": names must match whole words in the source.
         (STORAGE, "Is my data stored in the US?", "Your data is stored in Frankfurt and Dublin, not in the US."),
+        # A refusal of a question the router already grounded: the customer gets nothing.
+        (CONTEXT, "Here is my SSN [REDACTED_ID] and passport ID [REDACTED_ID] to verify my refund under your return policy.",
+         "I’m sorry, but I can’t process that request."),
     ],
 )
 def test_live_hallucination_patterns_are_rejected(monkeypatch, context, question, answer):
     monkeypatch.setattr(llm, "_chat", groq_reply(f'{{"answer": "{answer}", "grounded": true}}'))
-    assert llm.phrase("L1", question, context) is None
+    assert llm.phrase("L1", question, context).answer is None
 
 
 @pytest.mark.parametrize(
@@ -90,7 +95,7 @@ def test_live_hallucination_patterns_are_rejected(monkeypatch, context, question
 )
 def test_rulings_on_the_customers_case_are_rejected(monkeypatch, answer):
     monkeypatch.setattr(llm, "_chat", groq_reply(f'{{"answer": "{answer}", "grounded": true}}'))
-    assert llm.phrase("L2", "Can I still get a refund for ORD-9105?", ORDER_AND_REFUNDS) is None
+    assert llm.phrase("L2", "Can I still get a refund for ORD-9105?", ORDER_AND_REFUNDS).answer is None
 
 
 @pytest.mark.parametrize(

@@ -23,8 +23,9 @@ A grounded reply goes to the LLM together with only the redacted question and th
 | Promises | promised actions ("we can process…", "I'll refund…") | |
 | Claims | compliance or guarantee wording ("aligns with", "compliant", "certified") the source doesn't contain | |
 | Rulings | verdicts on the customer's own case ("still", "eligible", "no longer", "you are within…") | "Yes, you are still within the 14-day window" when the model knows neither today's date nor the order's items |
+| Refusals | "sorry", "unable to", "can't help/process/verify…" on a question the router already grounded | "I'm sorry, but I can't process that request." in reply to a refund-policy question |
 
-The names, promises, claims and rulings checks were added after the model produced exactly those failures in live testing (decision 13). The prompt forbids them too, but a prompt is not a guarantee.
+The names, promises, claims, rulings and refusals checks were added after the model produced exactly those failures in live testing (decision 13). The prompt forbids them too, but a prompt is not a guarantee.
 
 **Why.** "0% hallucinations" and "0% PII leaks" have to hold under every failure mode, including a missing key, a Groq outage or an over-eager model. With this split the model can make an answer read better, but it cannot turn a refusal into an answer. It cannot cite a source the router did not choose either.
 
@@ -231,7 +232,7 @@ While a conversation is `waiting_human`, customer messages are stored and acknow
 - `OUTCOME_VALUE_USD` defaults to **$0.50**, a deliberately conservative assumption for the value of one resolved contact.
 - Each call's maximum cost is estimated before it is made: prompt size plus the output-token cap.
 - A call that would exceed the cap is skipped, and the verbatim answer is used at $0.
-- Reported cost is computed from Groq's returned `usage`.
+- Reported cost is computed from Groq's returned `usage`. It includes calls whose answer failed a check: the customer gets the source text, but the tokens were billed.
 
 ## 13. Testing beyond the brief
 
@@ -266,12 +267,13 @@ The model marked all four `grounded: true`, so the self-report was not enough.
 - E58 is also routed as a refund request ("for the … refund"), so it no longer reaches the model.
 - E28 is an L0 escalation: the order can still be changed, and a specialist makes the edit.
 
-**A re-run on 2026-11-25 found one more.** E26 asks "Can I still get a refund for ORD-9105?", and the model answered "Yes, you are still within the 14-day window to request a full refund for that order."
-- The model is given the delivery date and the refund policy, but not today's date or the order's items.
-- The policy's condition (license keys not revoked) cannot be checked from chat at all.
-- So the "yes" was a guess on all three counts.
+**Re-runs on 2026-11-25 found two more.**
+- E26 asks "Can I still get a refund for ORD-9105?", and the model answered "Yes, you are still within the 14-day window to request a full refund for that order." It is given the delivery date and the refund policy, but not today's date or the order's items, and the policy's condition (license keys not revoked) cannot be checked from chat at all. The "yes" was a guess.
+- C24 asks to "verify my refund under your return policy", and the model answered "I'm sorry, but I can't process that request." Nothing in it is false, but the customer gets neither the policy nor a human.
 
-The rulings check now rejects verdict wording, and the customer gets the order facts and the refund policy verbatim. Earlier runs had sent this case verbatim, which is why the gap only showed up on a re-run.
+The rulings and refusals checks now reject both, and the customer gets the source text verbatim. Earlier runs had sent both cases verbatim, which is why the gaps only showed up on re-runs.
+
+The same review found that a rejected answer was reported at $0, although Groq bills the call. Reported cost now includes it.
 
 The scorecard lists every LLM-phrased reply so a person can review the wording on each run.
 

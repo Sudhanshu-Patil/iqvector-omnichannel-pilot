@@ -255,8 +255,8 @@ def _orders(
 def _answer(text: str, context: dict[str, str], level: str, llm_allowed: bool) -> Decision:
     source = ",".join(context)
     phrased = llm.phrase(level, text, context) if llm_allowed else None
-    if phrased:
-        return Decision(level, phrased.answer, source, phrased.cost_usd, phrased.tokens)
-    # No key, no consent, over budget, or the model's answer failed a check: the grounded
-    # source text itself is the answer.
-    return Decision(level, "\n\n".join(context.values()), source)
+    spent = (phrased.cost_usd, phrased.tokens) if phrased else (0.0, 0)
+    # No key, no consent, over budget, or the model's answer failed a check: the grounded source
+    # text itself is the answer. A rejected answer was still billed, so its cost is reported.
+    reply = phrased.answer if phrased and phrased.answer else "\n\n".join(context.values())
+    return Decision(level, reply, source, *spent)

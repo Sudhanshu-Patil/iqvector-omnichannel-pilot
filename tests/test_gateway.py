@@ -192,6 +192,21 @@ def test_llm_phrases_answer_for_consenting_contact(send, monkeypatch):
     assert "elena" not in str(calls[0]).lower()  # the model only sees redacted text and the KB chunk
 
 
+def test_rejected_llm_answer_sends_the_source_but_is_still_costed(send, kb, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    def fake_chat(payload):
+        return {
+            "choices": [{"message": {"content": '{"answer": "You have 14 days.", "grounded": false}'}}],
+            "usage": {"prompt_tokens": 300, "completion_tokens": 50, "total_tokens": 350},
+        }
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    result = send("What is your refund window?", channel="web", user="web_sess_rejected")
+    assert result["reply"] == kb.answers["faq_03"]
+    assert result["cost_usd"] > 0  # Groq bills the call even though its answer was not used
+
+
 def test_routing_failure_hands_off_to_human(send, monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("simulated bug")

@@ -8,6 +8,7 @@ The LLM tier is live when GROQ_API_KEY is set (in-process) or configured on the 
 """
 
 import argparse
+import io
 import json
 import re
 import statistics
@@ -162,11 +163,13 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
     )
     hallucinations = sum(1 for _, _, p in by_category["out_of_kb_hallucination_trap"] if p)
     standard_ok = sum(1 for _, _, p in by_category["standard_l0_or_rag"] if not p)
-    l0_share = sum(r["level_used"] == "L0" for r in results) / len(results)
+    l0_turns = [r for r in results if r["level_used"] == "L0"]
+    l0_unescalated = sum(not r["escalate"] for r in l0_turns)
+    l0_share = len(l0_turns) / len(results)
     idempotent = int(all(duplicate_checks.values()))
 
     latencies = sorted(r["latency_ms"] for r in results)
-    l0_latencies = sorted(r["latency_ms"] for r in results if r["level_used"] == "L0")
+    l0_latencies = sorted(r["latency_ms"] for r in l0_turns)
     costs = [r["cost_usd"] for r in results]
     from app.llm import MAX_COST_SHARE, OUTCOME_VALUE_USD  # same constants the server enforces
 
@@ -202,13 +205,15 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
         "|---|---|---|---|",
         *[f"| {name} | {goal} | {got} | {'PASS' if ok else 'FAIL'} |" for name, goal, got, ok in targets],
         "",
-        f"Tier mix over 30 cases: L0 {sum(r['level_used'] == 'L0' for r in results)}, "
+        f"Tier mix over 30 cases: L0 {len(l0_turns)}, "
         f"L1 {sum(r['level_used'] == 'L1' for r in results)}, L2 {sum(r['level_used'] == 'L2' for r in results)}. "
         f"Latency p50 {statistics.median(latencies)} ms, p95 {p95(latencies)} ms. Total LLM cost ${sum(costs):.6f}.",
         "",
-        "\"Handled at L0\" counts every turn the deterministic tier finished at $0: answers, injection blocks and",
-        f"immediate human escalations. Of the {sum(r['level_used'] == 'L0' for r in results)} L0 turns, "
-        f"{sum(r['level_used'] == 'L0' and not r['escalate'] for r in results)} were answered without a human.",
+        "\"Handled at L0\" counts every turn the deterministic tier finished at $0 without calling an LLM: answers,",
+        "injection blocks and immediate human escalations.",
+        "",
+        f"- Total L0: {l0_share:.0%} ({len(l0_turns)}/{len(results)})",
+        f"- Non-escalated L0 (no human handoff): {l0_unescalated / len(results):.0%} ({l0_unescalated}/{len(results)})",
         "",
         "## The 30 brief cases",
         "",
@@ -311,6 +316,8 @@ def main() -> int:
             scorecard, ok = run(client, lambda: calls["n"], label, "in-process app, fresh database", commit or "uncommitted")
 
     Path(args.output).write_text(scorecard, encoding="utf-8")
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(errors="replace")  # a cp1252 Windows console cannot print the LLM's typographic dashes
     print(scorecard)
     return 0 if ok else 1
 

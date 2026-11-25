@@ -22,8 +22,9 @@ A grounded reply goes to the LLM together with only the redacted question and th
 | Names | any capitalised name or term (other than a sentence's first word) that isn't in the source as a whole word | "We do not accept PayPal" when the KB never mentions PayPal; "the Starter plan includes 600 requests" |
 | Promises | promised actions ("we can process…", "I'll refund…") | |
 | Claims | compliance or guarantee wording ("aligns with", "compliant", "certified") the source doesn't contain | |
+| Rulings | verdicts on the customer's own case ("still", "eligible", "no longer", "you are within…") | "Yes, you are still within the 14-day window" when the model knows neither today's date nor the order's items |
 
-The names, promises and claims checks were added after the model produced exactly those failures in live testing (decision 13). The prompt forbids them too, but a prompt is not a guarantee.
+The names, promises, claims and rulings checks were added after the model produced exactly those failures in live testing (decision 13). The prompt forbids them too, but a prompt is not a guarantee.
 
 **Why.** "0% hallucinations" and "0% PII leaks" have to hold under every failure mode, including a missing key, a Groq outage or an over-eager model. With this split the model can make an answer read better, but it cannot turn a refusal into an answer. It cannot cite a source the router did not choose either.
 
@@ -264,6 +265,13 @@ The model marked all four `grounded: true`, so the self-report was not enough.
 - E58, E33 and E31 are now rejected by the name, promise and claim checks in decision 1, and the source text is sent instead. Each is pinned by a unit test using the exact wording the model produced.
 - E58 is also routed as a refund request ("for the … refund"), so it no longer reaches the model.
 - E28 is an L0 escalation: the order can still be changed, and a specialist makes the edit.
+
+**A re-run on 2026-11-25 found one more.** E26 asks "Can I still get a refund for ORD-9105?", and the model answered "Yes, you are still within the 14-day window to request a full refund for that order."
+- The model is given the delivery date and the refund policy, but not today's date or the order's items.
+- The policy's condition (license keys not revoked) cannot be checked from chat at all.
+- So the "yes" was a guess on all three counts.
+
+The rulings check now rejects verdict wording, and the customer gets the order facts and the refund policy verbatim. Earlier runs had sent this case verbatim, which is why the gap only showed up on a re-run.
 
 The scorecard lists every LLM-phrased reply so a person can review the wording on each run.
 

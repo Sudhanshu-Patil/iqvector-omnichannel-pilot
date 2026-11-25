@@ -29,7 +29,7 @@ Open http://localhost:8000 for the playground and http://localhost:8000/docs for
 - Without `GROQ_API_KEY`, the service still runs: grounded answers are returned verbatim from the knowledge base instead of being phrased by an LLM.
 
 ```bash
-pytest                                            # 280 tests, no network needed
+pytest                                            # 285 tests, no network needed
 python eval_harness.py                            # 30 brief cases + edge cases, writes EVAL_SCORECARD.md
 python eval_harness.py --base-url https://<host>  # same run against a deployed instance
 ```

@@ -260,7 +260,8 @@ def build_scorecard(brief_rows, duplicate_checks, replay, first_case, edge_rows,
             "## LLM-phrased replies, for human review",
             "",
             "Every reply below passed the server's checks: numbers and names must appear in the source, and no "
-            "promised actions or compliance claims are allowed. Grounded answers that failed a check were sent "
+            "promised actions, compliance claims or rulings on the customer's own case are allowed. Grounded "
+            "answers that failed a check were sent "
             "verbatim and are not listed.",
             "",
             "| Case | Question | Source | Cost | Reply |",

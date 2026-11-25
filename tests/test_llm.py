@@ -55,6 +55,10 @@ STORAGE = {
     "faq_05": "All customer and candidate data is stored in our EU Sovereign Vault (Frankfurt / Dublin) encrypted with "
     "AES-256 at rest and TLS 1.3 in transit. Raw PII is redacted prior to any external LLM call."
 }
+ORDER_AND_REFUNDS = {
+    "ORD-9105": "Order ORD-9105 is delivered with UPS (tracking: 1Z9999999999999999). Delivered on 2026-11-20.",
+    **CONTEXT,
+}
 
 
 @pytest.mark.parametrize(
@@ -77,12 +81,31 @@ def test_live_hallucination_patterns_are_rejected(monkeypatch, context, question
 
 
 @pytest.mark.parametrize(
+    "answer",
+    [
+        "Yes, you are still within the 14-day window to request a full refund for that order.",  # gpt-oss, live, E26
+        "You're within the refund window for ORD-9105.",
+        "ORD-9105 is no longer eligible for a refund.",
+    ],
+)
+def test_rulings_on_the_customers_case_are_rejected(monkeypatch, answer):
+    monkeypatch.setattr(llm, "_chat", groq_reply(f'{{"answer": "{answer}", "grounded": true}}'))
+    assert llm.phrase("L2", "Can I still get a refund for ORD-9105?", ORDER_AND_REFUNDS) is None
+
+
+@pytest.mark.parametrize(
     ("context", "question", "answer"),
     [
         (PAYMENTS, "Can I pay with Bitcoin?", "No, we do not accept cryptocurrency payments."),
         (PAYMENTS, "Which payment options can I use?",
          "You can pay by SEPA Instant transfer in EUR, SWIFT wire in USD, GBP or EUR, or corporate Visa or Mastercard cards."),
         (STORAGE, "Where is my data stored?", "Your data is stored in our EU Sovereign Vault in Frankfurt and Dublin, encrypted with AES-256."),
+        (CONTEXT, "I don't need a human, just tell me the refund window",
+         "You can request a full refund within 14 calendar days of delivery for physical hardware keys and within 30 "
+         "calendar days of purchase for annual software subscriptions."),
+        (ORDER_AND_REFUNDS, "Can I still get a refund for ORD-9105?",
+         "ORD-9105 was delivered on 2026-11-20. Refunds are available within 14 calendar days of delivery for physical "
+         "hardware keys and within 30 calendar days of purchase for annual software subscriptions."),
     ],
 )
 def test_faithful_paraphrases_pass_the_checks(monkeypatch, context, question, answer):
